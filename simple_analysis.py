@@ -475,9 +475,10 @@ def analyze_gi_star_distribution(gi_star_image, roi, scale=500, month_name=""):
         traceback.print_exc()
 
 def main():
-    """Main function for monthly temporal analysis."""
+    """Main function for monthly temporal analysis - processing all individual months."""
     
     print("Monthly Temporal Getis-Ord Gi* Analysis")
+    print("Individual Month Processing (No Compositing)")
     print("=" * 60)
     
     # Load configuration
@@ -485,23 +486,38 @@ def main():
     
     # Initialize Google Earth Engine
     initialize_ee(config['ee']['project'])
-      # Define region of interest
+    
+    # Define region of interest
     roi = ee.Geometry.Rectangle(config['ee']['roi'])
     
     print(f"\nProcessing region: {config['ee']['roi']}")
     print(f"Output directory: {config['export']['output_dir']}")
+    print(f"Sample period: {config['sample']['start_year']}-{config['sample']['end_year']}")
+    print(f"Baseline period: {config['baseline']['start_year']}-{config['baseline']['end_year']}")
     
     # Create water mask
     print("\nCreating water mask...")
     water_mask = create_water_mask(roi)
     
-    # Process each month
+    # Generate list of all months to process
     months_to_process = config.get('process_months', list(range(1, 13)))
+    years_to_process = list(range(config['sample']['start_year'], config['sample']['end_year'] + 1))
+    
+    total_combinations = len(years_to_process) * len(months_to_process)
+    current_combination = 0
+    
+    print(f"\n📅 Processing Plan:")
+    print(f"   Years: {config['sample']['start_year']} to {config['sample']['end_year']} ({len(years_to_process)} years)")
+    print(f"   Months: {len(months_to_process)} months per year")
+    print(f"   Total individual months: {total_combinations}")
+    print(f"   Each month compared against baseline composite ({config['baseline']['start_year']}-{config['baseline']['end_year']})")
+    
+    # Create baseline composites for each month (once per month across all baseline years)
+    baseline_composites = {}
+    print(f"\n🏗️ Creating baseline composites...")
     
     for month in months_to_process:
         month_name = get_month_name(month)
-        print(f"\n{'='*60}")
-        print(f"Processing {month_name} (Month {month})")        # Get baseline composite for this month
         print(f"\n  Creating baseline composite for {month_name} ({config['baseline']['start_year']}-{config['baseline']['end_year']})...")
         
         try:
@@ -512,137 +528,188 @@ def main():
                 config['baseline']['end_year'],
                 month,
                 config['ee']['ntl_band'],
-                config['ee']['quality_band'],  # Add quality band
-                config['ee']['snow_band'],     # Add snow band
-                water_mask            )
-            
-            if baseline_composite is None:
-                print(f"  ✗ No baseline data for {month_name}, skipping...")
-                continue
-            
-            # Get sample data for this month (use most recent year in sample period)
-            sample_year = config['sample']['end_year']  # Use the latest year
-            print(f"  Getting individual sample data for {month_name} {sample_year} (no compositing)...")
-            
-            sample_composite = get_individual_monthly_ntl(
-                config['ee']['ntl_collection_id'],
-                roi,
-                sample_year,
-                month,
-                config['ee']['ntl_band'],
-                config['ee']['quality_band'],  # Add quality band
-                config['ee']['snow_band'],     # Add snow band
+                config['ee']['quality_band'],
+                config['ee']['snow_band'],
                 water_mask
             )
             
-            if sample_composite is None:
-                print(f"  ✗ No sample data for {month_name}, skipping...")
+            if baseline_composite is not None:
+                baseline_composites[month] = baseline_composite
+                print(f"    ✓ Baseline composite created for {month_name}")
+                
+                # Export baseline composite (once per month)
+                baseline_filename = f"baseline_{month:02d}_{month_name}_{config['baseline']['start_year']}-{config['baseline']['end_year']}"
+                export_image_locally(
+                    baseline_composite,
+                    baseline_filename,
+                    roi,
+                    config['export']['scale'],
+                    config['export']['output_dir']
+                )
+            else:
+                print(f"    ✗ No baseline data for {month_name}")
+                
+        except Exception as e:
+            print(f"    ✗ Error creating baseline for {month_name}: {e}")
+    
+    print(f"\n✅ Baseline composites ready: {len(baseline_composites)}/{len(months_to_process)} months")
+    
+    # Process each individual month for each year
+    print(f"\n🔄 Processing individual months...")
+    
+    for year in years_to_process:
+        print(f"\n{'='*80}")
+        print(f"PROCESSING YEAR {year}")
+        print(f"{'='*80}")
+        
+        for month in months_to_process:
+            current_combination += 1
+            month_name = get_month_name(month)
+            
+            print(f"\n📅 Processing {month_name} {year} ({current_combination}/{total_combinations})")
+            print("-" * 50)
+            
+            # Skip if no baseline for this month
+            if month not in baseline_composites:
+                print(f"  ⏭️  Skipping - no baseline composite for {month_name}")
                 continue
-            
-            # Calculate change
-            print(f"  Calculating NTL change for {month_name}...")
-            ntl_change = sample_composite.subtract(baseline_composite).rename('ntl_change')
-            
-            # Perform Gi* analysis
-            print(f"  Performing Gi* analysis for {month_name}...")
-            gi_star = simple_getis_ord_gi_star(ntl_change, roi, config['export']['scale'])
-            
-            # Calculate basic statistics
-            print(f"  Computing statistics for {month_name}...")
+                
             try:
-                # Change statistics
-                change_stats = ntl_change.reduceRegion(
-                    reducer=ee.Reducer.mean().combine(ee.Reducer.minMax(), sharedInputs=True),
-                    geometry=roi,
-                    scale=config['export']['scale'],
-                    maxPixels=1e9,
-                    bestEffort=True
-                ).getInfo()
+                # Get individual monthly data (no compositing)
+                print(f"  📡 Fetching {month_name} {year} data...")
+                sample_composite = get_individual_monthly_ntl(
+                    config['ee']['ntl_collection_id'],
+                    roi,
+                    year,
+                    month,
+                    config['ee']['ntl_band'],
+                    config['ee']['quality_band'],
+                    config['ee']['snow_band'],
+                    water_mask
+                )
                 
-                # Gi* statistics
-                gi_stats = gi_star.reduceRegion(
-                    reducer=ee.Reducer.mean().combine(ee.Reducer.minMax(), sharedInputs=True),
-                    geometry=roi,
-                    scale=config['export']['scale'],
-                    maxPixels=1e9,
-                    bestEffort=True
-                ).getInfo()
+                if sample_composite is None:
+                    print(f"  ✗ No sample data for {month_name} {year}, skipping...")
+                    continue
                 
-                print(f"  {month_name} - NTL Change Statistics:")
-                for key, value in change_stats.items():
-                    if value is not None:
-                        print(f"    {key}: {value:.4f}")
+                # Calculate change against baseline
+                print(f"  🧮 Calculating NTL change for {month_name} {year}...")
+                baseline_composite = baseline_composites[month]
+                ntl_change = sample_composite.subtract(baseline_composite).rename('ntl_change')
                 
-                print(f"  {month_name} - Gi* Statistics:")
-                for key, value in gi_stats.items():
-                    if value is not None:
-                        print(f"    {key}: {value:.4f}")
+                # Perform Gi* analysis
+                print(f"  🎯 Performing Gi* analysis for {month_name} {year}...")
+                gi_star = simple_getis_ord_gi_star(ntl_change, roi, config['export']['scale'])
+                
+                # Calculate statistics
+                print(f"  📊 Computing statistics for {month_name} {year}...")
+                try:
+                    # Change statistics
+                    change_stats = ntl_change.reduceRegion(
+                        reducer=ee.Reducer.mean().combine(ee.Reducer.minMax(), sharedInputs=True),
+                        geometry=roi,
+                        scale=config['export']['scale'],
+                        maxPixels=1e9,
+                        bestEffort=True
+                    ).getInfo()
+                    
+                    # Gi* statistics
+                    gi_stats = gi_star.reduceRegion(
+                        reducer=ee.Reducer.mean().combine(ee.Reducer.minMax(), sharedInputs=True),
+                        geometry=roi,
+                        scale=config['export']['scale'],
+                        maxPixels=1e9,
+                        bestEffort=True
+                    ).getInfo()
+                    
+                    print(f"    {month_name} {year} - NTL Change:")
+                    for key, value in change_stats.items():
+                        if value is not None:
+                            print(f"      {key}: {value:.4f}")
+                    
+                    print(f"    {month_name} {year} - Gi* Statistics:")
+                    for key, value in gi_stats.items():
+                        if value is not None:
+                            print(f"      {key}: {value:.4f}")
+                    
+                except Exception as e:
+                    print(f"    ⚠️  Could not compute statistics: {e}")
+                
+                # Export individual month files
+                print(f"  💾 Exporting {month_name} {year} results...")
+                
+                month_str = f"{month:02d}"
+                
+                # Export sample (individual month)
+                sample_filename = f"sample_{month_str}_{month_name}_{year}"
+                export_image_locally(
+                    sample_composite,
+                    sample_filename,
+                    roi,
+                    config['export']['scale'],
+                    config['export']['output_dir']
+                )
+                
+                # Export change
+                change_filename = f"change_{month_str}_{month_name}_{year}_vs_baseline_{config['baseline']['start_year']}-{config['baseline']['end_year']}"
+                export_image_locally(
+                    ntl_change,
+                    change_filename,
+                    roi,
+                    config['export']['scale'],
+                    config['export']['output_dir']
+                )
+                
+                # Export Gi*
+                if gi_star is not None:
+                    # Detailed analysis
+                    analyze_gi_star_distribution(gi_star, roi, config['export']['scale'], f"{month_name} {year}")
+                    
+                    # Export Gi*
+                    gi_filename = f"gi_star_{month:02d}_{month_name}_{year}"
+                    export_image_locally(gi_star, gi_filename, roi, config['export']['scale'], config['export']['output_dir'])
+                    print(f"      ✓ Exported: {gi_filename}")
+                else:
+                    print(f"      ❌ Failed to compute Gi* for {month_name} {year}")
+                
+                print(f"  ✅ Completed {month_name} {year}")
                 
             except Exception as e:
-                print(f"  Warning: Could not compute statistics for {month_name}: {e}")
-            
-            # Export files locally
-            print(f"  Exporting {month_name} results...")
-            
-            month_str = f"{month:02d}"
-            
-            # Export baseline
-            export_image_locally(
-                baseline_composite,
-                f"baseline_{month_str}_{month_name}_{config['baseline']['start_year']}-{config['baseline']['end_year']}",
-                roi,
-                config['export']['scale'],
-                config['export']['output_dir']
-            )
-              # Export sample
-            export_image_locally(
-                sample_composite,
-                f"sample_{month_str}_{month_name}_{sample_year}",
-                roi,
-                config['export']['scale'],
-                config['export']['output_dir']
-            )
-              # Export change
-            export_image_locally(
-                ntl_change,
-                f"change_{month_str}_{month_name}_{config['baseline']['start_year']}-{config['baseline']['end_year']}_to_{sample_year}",
-                roi,
-                config['export']['scale'],
-                config['export']['output_dir']
-            )
-            
-            # Export Gi*
-            if gi_star is not None:
-                # Detailed analysis
-                analyze_gi_star_distribution(gi_star, roi, config['export']['scale'], month_name)
-                  # Export as before
-                gi_filename = f"gi_star_{month:02d}_{month_name}_{sample_year}"
-                export_image_locally(gi_star, gi_filename, roi, config['export']['scale'], config['export']['output_dir'])
-                print(f"    ✓ Exported: {gi_filename}")
-            else:
-                print(f"    ❌ Failed to compute Gi* for {month_name}")
-            
-            print(f"  ✓ Completed processing for {month_name}")
-            
-        except Exception as e:
-            print(f"  ✗ Error processing {month_name}: {e}")
-            continue
+                print(f"  ❌ Error processing {month_name} {year}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
     
-    print(f"\n{'='*60}")
-    print("Monthly Temporal Analysis Complete!")
-    print(f"{'='*60}")
-    print(f"Results saved to: {config['export']['output_dir']}")
-    print("\nFiles generated for each month:")
-    print("  - baseline_MM_MonthName_YYYY-YYYY.tif (composite across baseline years)")
-    print("  - sample_MM_MonthName_YYYY.tif (individual year, no compositing)") 
-    print("  - change_MM_MonthName_YYYY-YYYY_to_YYYY.tif")
-    print("  - gi_star_MM_MonthName_YYYY.tif")
-    print("\nNote: Baseline data uses multi-year composites for robustness")
-    print("      Sample data uses individual months from the latest year")
-    print("\nUse these files for temporal analysis to identify:")
-    print("  • Seasonal patterns in nighttime lights")
-    print("  • Monthly variations in spatial clustering")
-    print("  • Temporal trends in hot/cold spots")
+    # Final summary
+    print(f"\n{'='*80}")
+    print("MONTHLY TEMPORAL ANALYSIS COMPLETE!")
+    print(f"{'='*80}")
+    print(f"📁 Results saved to: {config['export']['output_dir']}")
+    print(f"📅 Processed: {len(years_to_process)} years × {len(months_to_process)} months = {total_combinations} individual months")
+    print(f"🏗️ Created: {len(baseline_composites)} baseline composites")
+    
+    print(f"\n📋 File Structure Generated:")
+    print(f"   Baseline composites (one per month):")
+    print(f"     baseline_MM_MonthName_YYYY-YYYY.tif")
+    print(f"   ")
+    print(f"   Individual monthly files (for each year):")
+    for year in years_to_process:
+        print(f"     {year}:")
+        print(f"       sample_MM_MonthName_{year}.tif")
+        print(f"       change_MM_MonthName_{year}_vs_baseline_YYYY-YYYY.tif")
+        print(f"       gi_star_MM_MonthName_{year}.tif")
+    
+    print(f"\n🎯 Analysis Capabilities Unlocked:")
+    print(f"   • Seasonal patterns: Compare same months across years")
+    print(f"   • Annual trends: Track changes year-over-year")
+    print(f"   • Monthly variations: Compare different months within years")
+    print(f"   • Temporal clustering: Identify when and where hot/cold spots occur")
+    print(f"   • Anomaly detection: Find unusual months compared to baseline")
+    
+    print(f"\n📊 Recommended Next Steps:")
+    print(f"   1. Run visualize_results.py for spatial visualizations")
+    print(f"   2. Run mann_kendall_analysis_fixed.py for temporal trend analysis")
+    print(f"   3. Use the individual monthly files for detailed temporal analysis")
 
 if __name__ == "__main__":
     main()
