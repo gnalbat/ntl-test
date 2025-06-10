@@ -339,6 +339,44 @@ def simple_getis_ord_gi_star(image, roi, scale=500):
     
     return gi_star_clamped.rename('gi_star')
 
+def local_getis_ord_gi_star(image, roi, scale=500, kernel_radius=7):
+    """
+    Enhanced Getis-Ord Gi* with local standardization for VIIRS (500m resolution).
+    Kernel radius of 7 pixels = 3.5km neighborhood (optimal for urban hotspot detection).
+    """
+    # Define Gaussian kernel (distance-weighted, normalized)
+    kernel = ee.Kernel.gaussian(
+        radius=kernel_radius, 
+        units='pixels', 
+        normalize=True, 
+        magnitude=1
+    )
+    
+    # Calculate local mean and std dev using the same kernel
+    local_mean = image.convolve(kernel)
+    local_sq = image.pow(2).convolve(kernel)
+    local_std = local_sq.subtract(local_mean.pow(2)).sqrt().max(0.001)  # Avoid division by zero
+    
+    # Calculate local Gi* (standardized by neighborhood statistics)
+    gi_star = image.subtract(local_mean).divide(local_std)
+    
+    # Dynamic clamping based on data distribution
+    def auto_clamp(gi_img):
+        stats = gi_img.reduceRegion(
+            reducer=ee.Reducer.percentile([1, 99]),
+            geometry=roi,
+            scale=scale,
+            maxPixels=1e9
+        ).getInfo()
+        
+        clamp_min = stats.get('p1', -3.5)  # Default to -3.5 if missing
+        clamp_max = stats.get('p99', 3.5)  # Default to +3.5 if missing
+        return gi_img.clamp(clamp_min, clamp_max)
+    
+    gi_star_clamped = auto_clamp(gi_star)
+    
+    return gi_star_clamped.rename('gi_star_local')
+
 def export_image_locally(image, filename, roi, scale=500, output_dir="./data"):
     """Export image as GeoTIFF to local folder."""
     
@@ -395,6 +433,39 @@ def create_water_mask(roi):
         print("    Proceeding without water masking")
         # Return a mask that doesn't filter anything
         return ee.Image.constant(1).clip(roi)
+    
+def robust_local_gi_star(image, roi, scale=500):
+    """Local Gi* with edge correction and adaptive kernels."""
+    # 1. Buffer ROI
+    buffered_roi = roi.buffer(2000)  # 2km buffer
+    
+    # 2. Calculate urban fraction for kernel sizing
+    urban_fraction = image.gt(10).reduceRegion(
+        ee.Reducer.mean(), buffered_roi, scale
+    ).getInfo().get('constant', 0.2)
+    
+    kernel_radius = 3 if urban_fraction > 0.3 else 5  # Adaptive sizing
+    
+    # 3. Non-normalized kernel (critical)
+    kernel = ee.Kernel.square(
+        radius=kernel_radius,
+        units='pixels',
+        normalize=False  # Weights sum to actual neighbor count
+    )
+    
+    # 4. Local Gi* calculation
+    neighbor_counts = image.unmask(0).convolve(kernel)
+    local_sum = image.unmask(0).convolve(kernel)
+    local_mean = local_sum.divide(neighbor_counts)
+    local_var = image.pow(2).unmask(0).convolve(kernel) \
+                .divide(neighbor_counts) \
+                .subtract(local_mean.pow(2))
+    local_std = local_var.sqrt().max(0.001)
+    
+    gi_star = image.subtract(local_mean).divide(local_std)
+    
+    # 5. Clip to original ROI
+    return gi_star.clip(roi).rename('gi_star_robust')
 
 def analyze_gi_star_distribution(gi_star_image, roi, scale=500, month_name=""):
     """Analyze the distribution of Gi* values and provide insights."""
@@ -599,7 +670,7 @@ def main():
                 
                 # Perform Gi* analysis
                 print(f"  🎯 Performing Gi* analysis for {month_name} {year}...")
-                gi_star = simple_getis_ord_gi_star(ntl_change, roi, config['export']['scale'])
+                gi_star = robust_local_gi_star(ntl_change, roi, config['export']['scale'])
                 
                 # Calculate statistics
                 print(f"  📊 Computing statistics for {month_name} {year}...")
