@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import os
 from glob import glob
 import pandas as pd
-import seaborn as sns
 from datetime import datetime
 import warnings
 import xyzservices.providers as xyz
@@ -41,12 +40,6 @@ try:
 except ImportError:
     CONTEXTILY_AVAILABLE = False
     print("⚠️ Contextily not available - maps will use basic styling")
-
-try:
-    from scipy import ndimage
-    SCIPY_AVAILABLE = True
-except ImportError:
-    SCIPY_AVAILABLE = False
 
 def load_gi_star_data():
     """Load all Gi* GeoTIFF files and extract temporal data."""
@@ -437,12 +430,13 @@ def generate_interpretation_report(results, monthly_stats):
             print(f"   Slope: {result['slope']:.4f} per month")
             print(f"   Trend: {result['trend'].title()}")
             print()
-    
-    if significant_count == 0:
-        print("   No statistically significant trends detected.")
+        
+        if significant_count == 0:
+            print("   No statistically significant trends detected.")
     
     print(f"\n🌍 SPATIAL CLUSTERING INTERPRETATION:")
-    print("-" * 50)    # Analyze what the trends mean for spatial clustering
+    print("-" * 50)
+    # Analyze what the trends mean for spatial clustering
     if 'mean' in results and results['mean']:
         mean_result = results['mean']
         if mean_result['p_value'] < 0.05:
@@ -460,22 +454,22 @@ def generate_interpretation_report(results, monthly_stats):
     print(f"\n📊 NEXT STEPS:")
     print("-" * 50)
     print("   1. ✅ Real pixel-level analysis completed with rasterio")
-    print("   2. ✅ Spatial hotspot mapping completed with relaxed threshold")
-    print("   3. ✅ Hotspots with p = 0.097 are now visible in orange on maps")
+    print("   2. ✅ Pixel-wise Mann-Kendall spatial trend analysis completed")
+    print("   3. ✅ Spatial maps show WHERE temporal trends occur geographically")
     print("   4. Correlate spatial patterns with known regional events/policies")
     print("   5. Perform targeted analysis of persistent hotspot locations")
     print("   6. Consider seasonal decomposition for deeper temporal analysis")
-    print("   7. Validate hotspot locations with ground-truth economic data")
-    print("   8. Examine infrastructure/development in persistent hotspot areas")
-    print("   9. Create time-series animations of hotspot evolution")
-    print("   10. Investigate why certain areas are consistently hot/cold spots")
+    print("   7. Validate trend locations with ground-truth economic data")
+    print("   8. Examine infrastructure/development in trend areas")
+    print("   9. Create time-series animations of trend evolution")
+    print("   10. Investigate why certain areas show temporal changes")
     
-    print(f"\n🗺️ SPATIAL ANALYSIS INSIGHTS:")
+    print(f"\n🗺️ SPATIAL TREND ANALYSIS INSIGHTS:")
     print("-" * 50)
-    print("   • Hotspot location maps show spatial distribution of significance")
-    print("   • Orange areas represent moderately significant hotspots (p ≤ 0.10)")
-    print("   • Red areas represent highly significant hotspots (p < 0.05)")
-    print("   • Density analysis reveals temporal persistence of clustering")
+    print("   • Mann-Kendall spatial maps show temporal trend distribution")
+    print("   • Red areas represent increasing temporal trends")
+    print("   • Blue areas represent decreasing temporal trends")
+    print("   • Maps reveal spatial heterogeneity in temporal patterns")
     print("   • Use these maps to identify priority areas for investigation")
 
 def load_spatial_data_for_mapping(file_info):
@@ -540,357 +534,6 @@ def load_spatial_data_for_mapping(file_info):
                 print(f"  {info['month_name']:>10}: ❌ Error reading spatial data - {str(e)}")
     
     return spatial_data
-
-def create_hotspot_maps(spatial_data, threshold_p=0.10):
-    """Create maps showing hotspot locations with different significance levels."""
-    
-    print(f"\n🗺️ Creating hotspot location maps...")
-    print(f"   Including hotspots up to p = {threshold_p:.3f} threshold")
-    print("=" * 60)
-    
-    if not spatial_data:
-        print("❌ No spatial data available for mapping")
-        return
-    
-    # Select a few representative months
-    months_to_map = [1, 4, 7, 10]  # Jan, Apr, Jul, Oct
-    available_months = [m for m in months_to_map if m in spatial_data.keys()]
-    
-    if not available_months:
-        available_months = list(spatial_data.keys())[:4]
-    
-    # Create figure
-    fig, axes = plt.subplots(2, 2, figsize=(20, 16))
-    fig.suptitle('Hotspot Location Analysis - MIGEDC Region\n'
-                 f'Including hotspots with p ≤ {threshold_p:.3f}', 
-                 fontsize=16, fontweight='bold', y=0.95)
-    
-    axes = axes.flatten()
-    
-    # Define significance thresholds
-    # Converting p-values to z-scores (approximate)
-    # p = 0.05 → z ≈ 1.96
-    # p = 0.10 → z ≈ 1.645
-    # p = 0.097 → z ≈ 1.66
-    z_threshold_strict = 1.96   # p < 0.05
-    z_threshold_relaxed = 1.645  # p < 0.10 (includes p = 0.097)
-    
-    for i, month_num in enumerate(available_months[:4]):
-        if i >= 4:
-            break
-            
-        month_data = spatial_data[month_num]
-        data = month_data['data']
-        extent = month_data['extent']
-        
-        ax = axes[i]
-          # Add basemap if available with proper CRS handling
-        try:
-            if CONTEXTILY_AVAILABLE:
-                # Check if we need to transform coordinates for basemap
-                crs_code = month_data.get('crs', 'EPSG:3857')
-                if crs_code and hasattr(crs_code, 'to_string'):
-                    crs_string = crs_code.to_string()
-                else:
-                    crs_string = "EPSG:3857"  # Default to WGS84
-                
-                ctx.add_basemap(ax, crs=crs_string, source=xyz.CartoDB.Positron,
-                               alpha=0.7, attribution="")
-                print(f"✅ Added satellite basemap for {month_data['month_name']} (CRS: {crs_string})")
-            else:
-                ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.8, color='lightgray')
-                ax.set_facecolor('#f8f8f8')
-        except Exception as e:
-            print(f"⚠️ Basemap not available for {month_data['month_name']}: {e}")
-            ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.8, color='lightgray')
-            ax.set_facecolor('#f8f8f8')
-          # Create masks for different significance levels
-        hotspots_strict = (data > z_threshold_strict) & ~np.isnan(data)
-        hotspots_relaxed = (data > z_threshold_relaxed) & (data <= z_threshold_strict) & ~np.isnan(data)
-        coldspots_strict = (data < -z_threshold_strict) & ~np.isnan(data)
-        coldspots_relaxed = (data < -z_threshold_relaxed) & (data >= -z_threshold_strict) & ~np.isnan(data)
-        
-        # Ensure proper coordinate display by setting the extent explicitly
-        # Convert from pixel coordinates to geographic coordinates
-        left, right, bottom, top = extent
-        
-        # Verify we have proper geographic extent (not starting from 0)
-        print(f"    Geographic extent: {left:.3f}°E to {right:.3f}°E, {bottom:.3f}°N to {top:.3f}°N")
-        
-        # Plot base data (all Gi* values)
-        im_base = ax.imshow(data, extent=extent, aspect='equal', 
-                           cmap='RdBu_r', vmin=-3, vmax=3, alpha=0.3, interpolation='bilinear')
-        
-        # Overlay significant hotspots
-        # Create colored overlays for different significance levels
-        overlay_data = np.full_like(data, np.nan)
-        
-        # Strict hotspots (p < 0.05) - dark red
-        overlay_data[hotspots_strict] = 3
-        
-        # Relaxed hotspots (0.05 ≤ p < 0.10) - orange  
-        overlay_data[hotspots_relaxed] = 2
-        
-        # Strict coldspots (p < 0.05) - dark blue
-        overlay_data[coldspots_strict] = -3
-        
-        # Relaxed coldspots (0.05 ≤ p < 0.10) - light blue
-        overlay_data[coldspots_relaxed] = -2
-        
-        # Plot overlay with discrete colors
-        from matplotlib.colors import ListedColormap, BoundaryNorm
-        colors = ['#08306b', '#6baed6', 'white', '#fd8d3c', '#a63603']
-        bounds = [-3.5, -2.5, -0.5, 0.5, 2.5, 3.5]
-        cmap_discrete = ListedColormap(colors)
-        norm = BoundaryNorm(bounds, cmap_discrete.N)
-        
-        im_overlay = ax.imshow(overlay_data, extent=extent, aspect='equal',
-                              cmap=cmap_discrete, norm=norm, alpha=0.8, interpolation='nearest')
-        
-        # Explicitly set the axis limits to match the geographic extent
-        ax.set_xlim(left, right)
-        ax.set_ylim(bottom, top)
-        
-        # Count hotspots in each category
-        hotspots_strict_count = np.sum(hotspots_strict)
-        hotspots_relaxed_count = np.sum(hotspots_relaxed)
-        coldspots_strict_count = np.sum(coldspots_strict)
-        coldspots_relaxed_count = np.sum(coldspots_relaxed)
-        
-        total_pixels = np.sum(~np.isnan(data))
-        
-        # Set title with counts
-        ax.set_title(f"{month_data['month_name']} - Hotspot Locations\n"
-                    f"Hot: {hotspots_strict_count} (p<0.05), {hotspots_relaxed_count} (p<0.10)\n"
-                    f"Cold: {coldspots_strict_count} (p<0.05), {coldspots_relaxed_count} (p<0.10)",
-                    fontsize=12, fontweight='bold', pad=15)
-          # Format axes with perfect aspect ratio and coordinate display
-        ax.set_xlabel('Longitude (°)', fontsize=11)
-        ax.set_ylabel('Latitude (°)', fontsize=11)
-        ax.tick_params(labelsize=9)
-        
-        # Ensure equal aspect ratio for geographic data
-        ax.set_aspect('equal', adjustable='box')
-        
-        # Format coordinate labels to show true geographic coordinates
-        ax.locator_params(axis='x', nbins=4)
-        ax.locator_params(axis='y', nbins=4)
-        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.1f}°'))
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, p: f'{y:.1f}°'))
-        
-        print(f"  {month_data['month_name']:>10}: "
-              f"Hot(strict)={hotspots_strict_count:4d}, Hot(relaxed)={hotspots_relaxed_count:4d}, "
-              f"Cold(strict)={coldspots_strict_count:4d}, Cold(relaxed)={coldspots_relaxed_count:4d}")
-    
-    # Hide unused subplots
-    for i in range(len(available_months), 4):
-        axes[i].axis('off')
-    
-    # Add comprehensive legend
-    from matplotlib.patches import Patch
-    legend_elements = [
-        Patch(facecolor='#a63603', label='Hot Spots (p < 0.05)'),
-        Patch(facecolor='#fd8d3c', label='Hot Spots (0.05 ≤ p < 0.10)'),
-        Patch(facecolor='#6baed6', label='Cold Spots (0.05 ≤ p < 0.10)'),
-        Patch(facecolor='#08306b', label='Cold Spots (p < 0.05)'),
-        Patch(facecolor='white', edgecolor='gray', label='Non-significant (p ≥ 0.10)')
-    ]
-    
-    fig.legend(handles=legend_elements, loc='lower center', 
-               bbox_to_anchor=(0.5, -0.02), ncol=5, fontsize=11,
-               frameon=True, fancybox=True, shadow=True)
-    
-    plt.tight_layout()
-    plt.subplots_adjust(bottom=0.1)
-    
-    # Save the plot
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"hotspot_location_maps_{timestamp}.png"
-    plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')
-    print(f"✅ Hotspot location maps saved: {filename}")
-    
-    plt.show()
-
-def create_hotspot_density_analysis(spatial_data):
-    """Create density analysis of hotspots across all months."""
-    
-    print(f"\n🔥 Creating hotspot density analysis...")
-    print("=" * 60)
-    
-    if not spatial_data or len(spatial_data) == 0:
-        print("❌ No spatial data available for density analysis")
-        return
-    
-    # Get a reference month for coordinates
-    ref_month = list(spatial_data.keys())[0]
-    ref_data = spatial_data[ref_month]
-    data_shape = ref_data['data'].shape
-    extent = ref_data['extent']
-    
-    # Initialize accumulator arrays
-    hotspot_density_95 = np.zeros(data_shape)
-    hotspot_density_90 = np.zeros(data_shape)
-    coldspot_density_95 = np.zeros(data_shape)
-    valid_months = np.zeros(data_shape)
-    
-    print(f"Analyzing {len(spatial_data)} months of data...")
-    
-    # Accumulate hotspots across all months
-    for month_num, month_data in spatial_data.items():
-        data = month_data['data']
-        valid_mask = ~np.isnan(data) & np.isfinite(data)
-        
-        # Count valid months for each pixel
-        valid_months[valid_mask] += 1
-        
-        # Accumulate hotspots (p < 0.05)
-        hotspot_mask_95 = (data > 1.96) & valid_mask
-        hotspot_density_95[hotspot_mask_95] += 1
-        
-        # Accumulate hotspots (p < 0.10)
-        hotspot_mask_90 = (data > 1.645) & valid_mask
-        hotspot_density_90[hotspot_mask_90] += 1
-        
-        # Accumulate coldspots (p < 0.05)
-        coldspot_mask_95 = (data < -1.96) & valid_mask
-        coldspot_density_95[coldspot_mask_95] += 1
-    
-    # Calculate percentages (avoid division by zero)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        hotspot_percentage_95 = np.where(valid_months > 0, 
-                                        (hotspot_density_95 / valid_months) * 100, np.nan)
-        hotspot_percentage_90 = np.where(valid_months > 0, 
-                                        (hotspot_density_90 / valid_months) * 100, np.nan)
-        coldspot_percentage_95 = np.where(valid_months > 0, 
-                                         (coldspot_density_95 / valid_months) * 100, np.nan)
-    
-    # Create visualization
-    fig, axes = plt.subplots(2, 2, figsize=(20, 16))
-    fig.suptitle('Temporal Hotspot Density Analysis - MIGEDC Region\n'
-                 'Percentage of months each pixel was a significant hotspot/coldspot', 
-                 fontsize=16, fontweight='bold', y=0.95)
-    
-    axes = axes.flatten()
-    
-    # Plot configurations
-    plots = [
-        (hotspot_percentage_95, 'Hot Spots (p < 0.05)', 'Reds', 'Percentage of months as hotspot'),
-        (hotspot_percentage_90, 'Hot Spots (p < 0.10)', 'Oranges', 'Percentage of months as hotspot'),        (coldspot_percentage_95, 'Cold Spots (p < 0.05)', 'Blues', 'Percentage of months as coldspot'),
-        (valid_months, 'Data Availability', 'Greens', 'Number of valid months')
-    ]
-    
-    for i, (data_plot, title, colormap, label) in enumerate(plots):
-        ax = axes[i]
-        
-        # Get coordinate extents
-        left, right, bottom, top = extent
-          # Add basemap with proper CRS handling
-        try:
-            if CONTEXTILY_AVAILABLE:
-                # Use the same CRS as the reference data
-                crs_code = ref_data.get('crs', 'EPSG:3857')
-                if crs_code and hasattr(crs_code, 'to_string'):
-                    crs_string = crs_code.to_string()
-                else:
-                    crs_string = "EPSG:3857"  # Default to WGS84
-                    
-                ctx.add_basemap(ax, crs=crs_string, source=xyz.CartoDB.Positron,
-                               alpha=0.6, attribution="")
-        except:
-            ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.8, color='lightgray')
-            ax.set_facecolor('#f8f8f8')
-        
-        # Plot data
-        if i < 3:  # Percentage plots
-            vmax = 100 if i < 3 else np.nanmax(data_plot)
-            im = ax.imshow(data_plot, extent=extent, aspect='equal',
-                          cmap=colormap, vmin=0, vmax=vmax, alpha=0.8, interpolation='bilinear')
-        else:  # Valid months plot
-            im = ax.imshow(data_plot, extent=extent, aspect='equal',
-                          cmap=colormap, vmin=0, vmax=np.nanmax(data_plot), 
-                          alpha=0.8, interpolation='bilinear')
-        
-        # Explicitly set the axis limits to match the geographic extent
-        ax.set_xlim(left, right)
-        ax.set_ylim(bottom, top)
-        
-        # Add colorbar
-        cbar = plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
-        cbar.set_label(label, fontsize=10)
-        cbar.ax.tick_params(labelsize=9)
-          # Set title and labels with proper aspect ratio
-        ax.set_title(title, fontsize=12, fontweight='bold', pad=15)
-        ax.set_xlabel('Longitude (°)', fontsize=11)
-        ax.set_ylabel('Latitude (°)', fontsize=11)
-        ax.tick_params(labelsize=9)
-        
-        # Ensure equal aspect ratio for geographic data
-        ax.set_aspect('equal', adjustable='box')
-        
-        # Format coordinates with proper geographic values
-        ax.locator_params(axis='x', nbins=4)
-        ax.locator_params(axis='y', nbins=4)
-        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x:.1f}°'))
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, p: f'{y:.1f}°'))
-        
-        # Add statistics text
-        if i < 3:  # For percentage plots
-            non_zero = data_plot[data_plot > 0]
-            if len(non_zero) > 0:
-                max_pct = np.nanmax(data_plot)
-                mean_pct = np.nanmean(non_zero)
-                stats_text = f'Max: {max_pct:.1f}%\nMean: {mean_pct:.1f}%\nPixels: {len(non_zero)}'
-                ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-                       verticalalignment='top', fontsize=9,
-                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-    
-    plt.tight_layout()
-    plt.subplots_adjust(bottom=0.08)
-    
-    # Save the plot
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"hotspot_density_analysis_{timestamp}.png"
-    plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')
-    print(f"✅ Hotspot density analysis saved: {filename}")
-    
-    plt.show()
-    
-    # Print summary statistics
-    print(f"\n📊 HOTSPOT DENSITY SUMMARY:")
-    print("=" * 50)
-    
-    total_pixels = np.sum(valid_months > 0)
-    
-    # Persistent hotspots (hotspots in >50% of months)
-    persistent_hot_95 = np.sum(hotspot_percentage_95 > 50)
-    persistent_hot_90 = np.sum(hotspot_percentage_90 > 50)
-    persistent_cold_95 = np.sum(coldspot_percentage_95 > 50)
-    
-    print(f"Total analyzed pixels: {total_pixels:,}")
-    print(f"Persistent hotspots (p<0.05, >50% months): {persistent_hot_95} ({persistent_hot_95/total_pixels*100:.2f}%)")
-    print(f"Persistent hotspots (p<0.10, >50% months): {persistent_hot_90} ({persistent_hot_90/total_pixels*100:.2f}%)")
-    print(f"Persistent coldspots (p<0.05, >50% months): {persistent_cold_95} ({persistent_cold_95/total_pixels*100:.2f}%)")
-    
-    # Most persistent locations
-    max_hot_95 = np.nanmax(hotspot_percentage_95)
-    max_hot_90 = np.nanmax(hotspot_percentage_90)
-    max_cold_95 = np.nanmax(coldspot_percentage_95)
-    
-    print(f"\nMost persistent clustering:")
-    print(f"Strongest hotspot (p<0.05): {max_hot_95:.1f}% of months")
-    print(f"Strongest hotspot (p<0.10): {max_hot_90:.1f}% of months")  
-    print(f"Strongest coldspot (p<0.05): {max_cold_95:.1f}% of months")
-
-    return {
-        'hotspot_percentage_95': hotspot_percentage_95,
-        'hotspot_percentage_90': hotspot_percentage_90,
-        'coldspot_percentage_95': coldspot_percentage_95,
-        'valid_months': valid_months,
-        'extent': extent,
-        'persistent_hot_95': persistent_hot_95,
-        'persistent_hot_90': persistent_hot_90,
-        'persistent_cold_95': persistent_cold_95
-    }
 
 def create_mann_kendall_spatial_maps(file_info):
     """Create spatial maps showing Mann-Kendall trend results pixel by pixel."""
@@ -990,16 +633,16 @@ def create_mann_kendall_spatial_maps(file_info):
     
     # 1. Trend Direction Map
     ax1 = axes[0, 0]
-    try:
-        add_basemap_robust(ax1, bounds, crs, zoom=12)
-    except:
-        ax1.set_facecolor('#f0f0f0')
+    ax1.set_facecolor('#f0f0f0')
     
     # Create masked array for significant trends only
     significant_trends = np.where(p_values < 0.10, trend_direction, np.nan)
     
     im1 = ax1.imshow(significant_trends, extent=extent, cmap='RdBu_r', 
                      vmin=-1, vmax=1, alpha=0.8)
+    ctx.add_basemap(ax1, crs="EPSG:4326", source=xyz.CartoDB.Positron, alpha=0.7)
+    im1 = ax1.imshow(significant_trends, extent=extent, cmap='RdBu_r', 
+                     vmin=-1, vmax=1, alpha=0.8, zorder=1)
     ax1.set_aspect('equal', adjustable='box')
     ax1.set_xlim(bounds.left, bounds.right)
     ax1.set_ylim(bounds.bottom, bounds.top)
@@ -1015,16 +658,16 @@ def create_mann_kendall_spatial_maps(file_info):
     
     # 2. P-value Map (significance)
     ax2 = axes[0, 1]
-    try:
-        add_basemap_robust(ax2, bounds, crs, zoom=12)
-    except:
-        ax2.set_facecolor('#f0f0f0')
+    ax2.set_facecolor('#f0f0f0')
     
     # Show only significant p-values
     p_display = np.where(p_values < 0.10, p_values, np.nan)
     
     im2 = ax2.imshow(p_display, extent=extent, cmap='viridis_r', 
                      vmin=0, vmax=0.10, alpha=0.8)
+    ctx.add_basemap(ax2, crs="EPSG:4326", source=xyz.CartoDB.Positron, alpha=0.7)
+    im2 = ax2.imshow(p_display, extent=extent, cmap='viridis_r', 
+                     vmin=0, vmax=0.10, alpha=0.8, zorder=1)
     ax2.set_aspect('equal', adjustable='box')
     ax2.set_xlim(bounds.left, bounds.right)
     ax2.set_ylim(bounds.bottom, bounds.top)
@@ -1038,16 +681,16 @@ def create_mann_kendall_spatial_maps(file_info):
     
     # 3. Trend Strength (Kendall's Tau)
     ax3 = axes[1, 0]
-    try:
-        add_basemap_robust(ax3, bounds, crs, zoom=12)
-    except:
-        ax3.set_facecolor('#f0f0f0')
+    ax3.set_facecolor('#f0f0f0')
     
     # Show tau values for significant trends
     tau_display = np.where(p_values < 0.10, tau_values, np.nan)
     
     im3 = ax3.imshow(tau_display, extent=extent, cmap='RdBu_r', 
                      vmin=-1, vmax=1, alpha=0.8)
+    ctx.add_basemap(ax3, crs="EPSG:4326", source=xyz.CartoDB.Positron, alpha=0.7)
+    im3 = ax3.imshow(tau_display, extent=extent, cmap='RdBu_r', 
+                     vmin=-1, vmax=1, alpha=0.8, zorder=1)
     ax3.set_aspect('equal', adjustable='box')
     ax3.set_xlim(bounds.left, bounds.right)
     ax3.set_ylim(bounds.bottom, bounds.top)
@@ -1061,17 +704,21 @@ def create_mann_kendall_spatial_maps(file_info):
     
     # 4. Slope Map
     ax4 = axes[1, 1]
-    try:
-        add_basemap_robust(ax4, bounds, crs, zoom=12)
-    except:
-        ax4.set_facecolor('#f0f0f0')
+    ax4.set_facecolor('#f0f0f0')
     
     # Show slope values for significant trends
     slope_display = np.where(p_values < 0.10, slope_values, np.nan)
     
+    # Plot slope first, then add basemap (to keep colors correct)
     im4 = ax4.imshow(slope_display, extent=extent, cmap='RdBu_r', 
                      vmin=np.nanpercentile(slope_display, 5), 
                      vmax=np.nanpercentile(slope_display, 95), alpha=0.8)
+    # Add basemap underneath by drawing after imshow, then re-draw imshow to restore colors
+    ctx.add_basemap(ax4, crs="EPSG:4326", source=xyz.CartoDB.Positron, alpha=0.7, zorder=0)
+    # Re-draw imshow on top to preserve color scale
+    im4 = ax4.imshow(slope_display, extent=extent, cmap='RdBu_r', 
+                     vmin=np.nanpercentile(slope_display, 5), 
+                     vmax=np.nanpercentile(slope_display, 95), alpha=0.8, zorder=1)
     ax4.set_aspect('equal', adjustable='box')
     ax4.set_xlim(bounds.left, bounds.right)
     ax4.set_ylim(bounds.bottom, bounds.top)
@@ -1155,30 +802,204 @@ def create_spatial_trend_summary(p_values, trend_direction, tau_values, signific
         print(f"   • Some areas showing temporal changes ({significant_pixels/processed_pixels*100:.1f}% of region)")
         print(f"   • Mixed stability: some areas changing, most stable")
 
-def add_basemap_robust(ax, bounds, crs, zoom=12):
-    """Add basemap with fallback options."""
+def save_mann_kendall_rasters(spatial_results, output_dir="./mann_kendall_results"):
+    """Save Mann-Kendall spatial results as GeoTIFF rasters."""
+    
+    print(f"\n💾 Saving Mann-Kendall results as GeoTIFF rasters...")
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    if not RASTERIO_AVAILABLE:
+        print("❌ Rasterio not available - cannot save GeoTIFF files")
+        return False
+    
     try:
-        import contextily as ctx
-        ctx.add_basemap(ax, crs=crs, source=ctx.providers.Esri.WorldImagery, 
-                       zoom=zoom, alpha=0.7, attribution=False)
+        # Get spatial data
+        trend_direction = spatial_results['trend_direction']
+        p_values = spatial_results['p_values']
+        tau_values = spatial_results['tau_values']
+        slope_values = spatial_results['slope_values']
+        bounds = spatial_results['bounds']
+        crs = spatial_results['crs']
+        
+        # Calculate transform from bounds
+        height, width = trend_direction.shape
+        transform = rasterio.transform.from_bounds(
+            bounds.left, bounds.bottom, bounds.right, bounds.top, width, height
+        )
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Define raster metadata
+        meta = {
+            'driver': 'GTiff',
+            'dtype': 'float32',
+            'nodata': np.nan,
+            'width': width,
+            'height': height,
+            'count': 1,
+            'crs': crs,
+            'transform': transform,
+            'compress': 'lzw'
+        }
+        
+        # Save trend direction raster
+        trend_file = os.path.join(output_dir, f"mann_kendall_trend_direction_{timestamp}.tif")
+        with rasterio.open(trend_file, 'w', **meta) as dst:
+            dst.write(trend_direction.astype(np.float32), 1)
+        print(f"   ✅ Trend direction raster: {trend_file}")
+        
+        # Save p-values raster
+        pvalue_file = os.path.join(output_dir, f"mann_kendall_pvalues_{timestamp}.tif")
+        with rasterio.open(pvalue_file, 'w', **meta) as dst:
+            dst.write(p_values.astype(np.float32), 1)
+        print(f"   ✅ P-values raster: {pvalue_file}")
+        
+        # Save Kendall's Tau raster
+        tau_file = os.path.join(output_dir, f"mann_kendall_tau_{timestamp}.tif")
+        with rasterio.open(tau_file, 'w', **meta) as dst:
+            dst.write(tau_values.astype(np.float32), 1)
+        print(f"   ✅ Tau values raster: {tau_file}")
+        
+        # Save slope raster
+        slope_file = os.path.join(output_dir, f"mann_kendall_slope_{timestamp}.tif")
+        with rasterio.open(slope_file, 'w', **meta) as dst:
+            dst.write(slope_values.astype(np.float32), 1)
+        print(f"   ✅ Slope values raster: {slope_file}")
+        
+        # Save significance mask raster (binary: 1=significant, 0=not significant)
+        significance_mask = (p_values < 0.05).astype(np.float32)
+        significance_mask[np.isnan(p_values)] = np.nan
+        
+        sig_file = os.path.join(output_dir, f"mann_kendall_significance_mask_{timestamp}.tif")
+        with rasterio.open(sig_file, 'w', **meta) as dst:
+            dst.write(significance_mask, 1)
+        print(f"   ✅ Significance mask raster: {sig_file}")
+        
+        # Create metadata file
+        metadata_file = os.path.join(output_dir, f"mann_kendall_metadata_{timestamp}.txt")
+        with open(metadata_file, 'w') as f:
+            f.write("Mann-Kendall Trend Analysis Raster Metadata\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"CRS: {crs}\n")
+            f.write(f"Bounds: {bounds}\n")
+            f.write(f"Resolution: {width} x {height} pixels\n")
+            f.write(f"Transform: {transform}\n\n")
+            
+            f.write("Raster Files:\n")
+            f.write(f"- Trend Direction: {os.path.basename(trend_file)}\n")
+            f.write(f"  Values: -1 (decreasing), 0 (no trend), 1 (increasing)\n\n")
+            f.write(f"- P-values: {os.path.basename(pvalue_file)}\n")
+            f.write(f"  Values: 0.0 to 1.0 (lower = more significant)\n\n")
+            f.write(f"- Kendall's Tau: {os.path.basename(tau_file)}\n")
+            f.write(f"  Values: -1.0 to 1.0 (trend strength and direction)\n\n")
+            f.write(f"- Slope: {os.path.basename(slope_file)}\n")
+            f.write(f"  Values: Rate of change per time step\n\n")
+            f.write(f"- Significance Mask: {os.path.basename(sig_file)}\n")
+            f.write(f"  Values: 1 (p < 0.05), 0 (not significant), NaN (no data)\n\n")
+            
+            # Add statistics
+            total_pixels = np.sum(~np.isnan(p_values))
+            sig_pixels = np.sum(p_values < 0.05)
+            
+            f.write("Statistics:\n")
+            f.write(f"- Total analyzed pixels: {total_pixels:,}\n")
+            f.write(f"- Significant pixels (p < 0.05): {sig_pixels:,} ({sig_pixels/total_pixels*100:.2f}%)\n")
+            
+            if sig_pixels > 0:
+                increasing = np.sum((trend_direction == 1) & (p_values < 0.05))
+                decreasing = np.sum((trend_direction == -1) & (p_values < 0.05))
+                f.write(f"- Increasing trends: {increasing:,} ({increasing/sig_pixels*100:.1f}% of significant)\n")
+                f.write(f"- Decreasing trends: {decreasing:,} ({decreasing/sig_pixels*100:.1f}% of significant)\n")
+        
+        print(f"   ✅ Metadata file: {metadata_file}")
+        
+        print(f"\n📁 Mann-Kendall raster outputs saved to: {output_dir}")
+        print(f"🎯 {len(os.listdir(output_dir))} files created")
+        
         return True
-    except:
-        # Fallback to grid background
-        ax.set_facecolor('#f8f9fa')
-        # Add coordinate grid
-        extent = [bounds.left, bounds.right, bounds.bottom, bounds.top]
-        lon_ticks = np.linspace(bounds.left, bounds.right, 6)
-        lat_ticks = np.linspace(bounds.bottom, bounds.top, 6)
-        for lon in lon_ticks:
-            ax.axvline(x=lon, color='lightgray', alpha=0.5, linewidth=0.5)
-        for lat in lat_ticks:
-            ax.axhline(y=lat, color='lightgray', alpha=0.5, linewidth=0.5)
+        
+    except Exception as e:
+        print(f"❌ Error saving rasters: {e}")
+        return False
+
+def create_composite_raster(spatial_results, output_dir="./mann_kendall_results"):
+    """Create a composite raster combining trend direction and significance."""
+    
+    print(f"\n🎨 Creating composite Mann-Kendall raster...")
+    
+    if not RASTERIO_AVAILABLE:
+        print("❌ Rasterio not available - cannot create composite raster")
+        return False
+    
+    try:
+        trend_direction = spatial_results['trend_direction']
+        p_values = spatial_results['p_values']
+        bounds = spatial_results['bounds']
+        crs = spatial_results['crs']
+        
+        # Create composite values:
+        # -2: Significant decreasing (p < 0.05)
+        # -1: Marginal decreasing (0.05 ≤ p < 0.10)
+        #  0: No significant trend
+        #  1: Marginal increasing (0.05 ≤ p < 0.10)
+        #  2: Significant increasing (p < 0.05)
+        
+        composite = np.full_like(trend_direction, np.nan)
+        
+        # Significant trends (p < 0.05)
+        sig_mask = p_values < 0.05
+        composite[(trend_direction == 1) & sig_mask] = 2   # Significant increasing
+        composite[(trend_direction == -1) & sig_mask] = -2  # Significant decreasing
+        
+        # Marginal trends (0.05 ≤ p < 0.10)
+        marginal_mask = (p_values >= 0.05) & (p_values < 0.10)
+        composite[(trend_direction == 1) & marginal_mask] = 1   # Marginal increasing
+        composite[(trend_direction == -1) & marginal_mask] = -1  # Marginal decreasing
+        
+        # No trend or not significant
+        no_trend_mask = (p_values >= 0.10) | (trend_direction == 0)
+        composite[no_trend_mask] = 0
+        
+        # Save composite raster
+        height, width = composite.shape
+        transform = rasterio.transform.from_bounds(
+            bounds.left, bounds.bottom, bounds.right, bounds.top, width, height
+        )
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        composite_file = os.path.join(output_dir, f"mann_kendall_composite_{timestamp}.tif")
+        
+        meta = {
+            'driver': 'GTiff',
+            'dtype': 'float32',
+            'nodata': np.nan,
+            'width': width,
+            'height': height,
+            'count': 1,
+            'crs': crs,
+            'transform': transform,
+            'compress': 'lzw'
+        }
+        
+        with rasterio.open(composite_file, 'w', **meta) as dst:
+            dst.write(composite.astype(np.float32), 1)
+        
+        print(f"   ✅ Composite raster: {composite_file}")
+        print(f"   📊 Values: -2=Sig.Dec, -1=Marg.Dec, 0=NoTrend, 1=Marg.Inc, 2=Sig.Inc")
+        
+        return composite_file
+        
+    except Exception as e:
+        print(f"❌ Error creating composite raster: {e}")
         return False
 
 def main():
-    """Main function for Mann-Kendall trend analysis with proper spatial mapping."""
+    """Main function for Mann-Kendall trend analysis with spatial mapping and raster output."""
     
-    print("Mann-Kendall Trend Analysis with Spatial Trend Mapping")
+    print("Mann-Kendall Trend Analysis with Spatial Mapping and Raster Output")
     print("=" * 80)
     print("Analyzing temporal trends in Gi* patterns - WHERE trends occur spatially")
     print("=" * 80)
@@ -1203,9 +1024,27 @@ def main():
     # Create temporal visualizations (time series plots)
     create_trend_visualizations(results, monthly_stats)
     
-    # NEW: Create Mann-Kendall spatial maps (pixel-by-pixel trend analysis)
+    # Create Mann-Kendall spatial maps (pixel-by-pixel trend analysis)  
     print(f"\n🗺️ Creating spatial Mann-Kendall trend maps...")
     spatial_results = create_mann_kendall_spatial_maps(file_info)
+    
+    # NEW: Save raster outputs
+    if spatial_results:
+        print(f"\n💾 Saving Mann-Kendall results as raster files...")
+        save_success = save_mann_kendall_rasters(spatial_results)
+        
+        if save_success:
+            # Create composite raster
+            composite_file = create_composite_raster(spatial_results)
+            
+            print(f"\n📊 RASTER OUTPUTS SUMMARY:")
+            print(f"   • Trend direction raster (GeoTIFF)")
+            print(f"   • P-values raster (GeoTIFF)")
+            print(f"   • Kendall's Tau raster (GeoTIFF)")
+            print(f"   • Slope values raster (GeoTIFF)")
+            print(f"   • Significance mask raster (GeoTIFF)")
+            print(f"   • Composite trend raster (GeoTIFF)")
+            print(f"   • Metadata documentation (TXT)")
     
     # Generate interpretation report
     generate_interpretation_report(results, monthly_stats)
@@ -1214,8 +1053,10 @@ def main():
     print(f"📁 Files generated:")
     print(f"   • mann_kendall_analysis_*.png (temporal trends)")
     print(f"   • mann_kendall_spatial_maps_*.png (spatial trend maps)")
+    print(f"   • ./mann_kendall_results/ (GeoTIFF raster outputs)")
     print(f"🔍 Pixel-level spatial trend analysis performed")
     print(f"📊 Shows WHERE temporal trends are occurring geographically")
+    print(f"💾 Raster outputs ready for GIS analysis")
     
     if spatial_results and np.any(spatial_results['p_values'] < 0.10):
         sig_count = np.sum(spatial_results['p_values'] < 0.10)

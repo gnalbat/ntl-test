@@ -1,0 +1,32 @@
+Mann-Kendall Trend Analysis Raster Metadata
+==================================================
+
+Generated: 2025-06-11 01:14:10
+CRS: EPSG:4326
+Bounds: BoundingBox(left=122.39096588486422, bottom=10.371049955159878, right=122.74580042209142, top=10.91003912563159)
+Resolution: 79 x 120 pixels
+Transform: | 0.00, 0.00, 122.39|
+| 0.00,-0.00, 10.91|
+| 0.00, 0.00, 1.00|
+
+Raster Files:
+- Trend Direction: mann_kendall_trend_direction_20250611_011410.tif
+  Values: -1 (decreasing), 0 (no trend), 1 (increasing)
+
+- P-values: mann_kendall_pvalues_20250611_011410.tif
+  Values: 0.0 to 1.0 (lower = more significant)
+
+- Kendall's Tau: mann_kendall_tau_20250611_011410.tif
+  Values: -1.0 to 1.0 (trend strength and direction)
+
+- Slope: mann_kendall_slope_20250611_011410.tif
+  Values: Rate of change per time step
+
+- Significance Mask: mann_kendall_significance_mask_20250611_011410.tif
+  Values: 1 (p < 0.05), 0 (not significant), NaN (no data)
+
+Statistics:
+- Total analyzed pixels: 9,480
+- Significant pixels (p < 0.05): 48 (0.51%)
+- Increasing trends: 32 (66.7% of significant)
+- Decreasing trends: 16 (33.3% of significant)

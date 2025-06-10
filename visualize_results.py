@@ -420,17 +420,10 @@ def create_spatial_maps(gi_star_data, months_to_plot=[1, 4, 7, 10]):
             print(f"   ❌ CRS not found for {data_info['month_name']}, skipping...")
             continue
         
-        # Convert raster bounds to Web Mercator (EPSG:3857)
+        # Get raster bounds in native CRS
         extent = rasterio.transform.array_bounds(data.shape[0], data.shape[1], transform)
         left, bottom, right, top = extent
-        
-        # Reproject bounds to Web Mercator if necessary
-        if crs.to_epsg() != 3857:  # Check if CRS is not Web Mercator
-            from pyproj import Transformer
-            transformer = Transformer.from_crs(crs.to_epsg(), 3857, always_xy=True)
-            left, bottom = transformer.transform(left, bottom)
-            right, top = transformer.transform(right, top)
-            extent = (left, right, bottom, top)
+        extent = (left, right, bottom, top)
         
         # Plot the data
         im = axes[i].imshow(data, cmap=cmap, vmin=-5, vmax=5, extent=extent, alpha=0.7)
@@ -439,7 +432,8 @@ def create_spatial_maps(gi_star_data, months_to_plot=[1, 4, 7, 10]):
         axes[i].set_ylabel('Latitude')
         
         # Add alternative basemap (e.g., Stadia Maps or OpenStreetMap)
-        ctx.add_basemap(axes[i], crs="EPSG:3857", source=xyz.CartoDB.Positron, alpha=0.7)
+        ctx.add_basemap(axes[i], crs="EPSG:4326", source=xyz.CartoDB.Positron, alpha=0.7)
+        im = axes[i].imshow(data, cmap=cmap, vmin=-5, vmax=5, extent=extent, alpha=0.7, zorder=1)
         
         # Add colorbar
         cbar = plt.colorbar(im, ax=axes[i], shrink=0.8)
