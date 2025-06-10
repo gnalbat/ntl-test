@@ -3,6 +3,7 @@
 Visualization script for Getis-Ord Gi* analysis results
 """
 
+import contextily as ctx
 import ee
 import yaml
 import matplotlib.pyplot as plt
@@ -14,6 +15,7 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 import matplotlib.patches as mpatches
 from datetime import datetime
 import seaborn as sns
+import xyzservices.providers as xyz
 
 def load_config(config_path="config.yaml"):
     """Load configuration from YAML file."""
@@ -226,6 +228,7 @@ def analyze_gi_star_statistics(gi_star_data):
     # Calculate statistics for each month
     for month_num in sorted(gi_star_data.keys()):
         data_info = gi_star_data[month_num]
+        print(data_info)
         data = data_info['data']
         valid_data = data[~np.isnan(data)]
         
@@ -379,7 +382,7 @@ def create_monthly_comparison_plot(gi_star_data, monthly_stats):
     plt.show()
 
 def create_spatial_maps(gi_star_data, months_to_plot=[1, 4, 7, 10]):
-    """Create spatial maps for selected months."""
+    """Create spatial maps for selected months with an alternative basemap."""
     
     print(f"\n🗺️ Creating spatial maps for months: {months_to_plot}")
     
@@ -409,12 +412,34 @@ def create_spatial_maps(gi_star_data, months_to_plot=[1, 4, 7, 10]):
             
         data_info = gi_star_data[month_num]
         data = data_info['data']
+        transform = data_info['transform']
+        crs = data_info['crs']
+        
+        # Ensure CRS is valid
+        if crs is None:
+            print(f"   ❌ CRS not found for {data_info['month_name']}, skipping...")
+            continue
+        
+        # Convert raster bounds to Web Mercator (EPSG:3857)
+        extent = rasterio.transform.array_bounds(data.shape[0], data.shape[1], transform)
+        left, bottom, right, top = extent
+        
+        # Reproject bounds to Web Mercator if necessary
+        if crs.to_epsg() != 3857:  # Check if CRS is not Web Mercator
+            from pyproj import Transformer
+            transformer = Transformer.from_crs(crs.to_epsg(), 3857, always_xy=True)
+            left, bottom = transformer.transform(left, bottom)
+            right, top = transformer.transform(right, top)
+            extent = (left, right, bottom, top)
         
         # Plot the data
-        im = axes[i].imshow(data, cmap=cmap, vmin=-5, vmax=5, aspect='auto')
+        im = axes[i].imshow(data, cmap=cmap, vmin=-5, vmax=5, extent=extent, alpha=0.7)
         axes[i].set_title(f"{data_info['month_name']} ({month_num:02d})")
         axes[i].set_xlabel('Longitude')
         axes[i].set_ylabel('Latitude')
+        
+        # Add alternative basemap (e.g., Stadia Maps or OpenStreetMap)
+        ctx.add_basemap(axes[i], crs="EPSG:3857", source=xyz.CartoDB.Positron, alpha=0.7)
         
         # Add colorbar
         cbar = plt.colorbar(im, ax=axes[i], shrink=0.8)
