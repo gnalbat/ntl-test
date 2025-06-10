@@ -95,6 +95,62 @@ def get_monthly_ntl_composite(collection_id, roi, start_year, end_year, month, b
         print(f"    Found 0 valid images for month {month} after masking")
         return None
 
+def get_individual_monthly_ntl(collection_id, roi, year, month, band_name, quality_band, snow_band, water_mask=None):
+    """Get NTL data for a specific month in a specific year (no compositing across years)."""
+    
+    # Define start and end dates for this month in this year
+    if month in [1, 3, 5, 7, 8, 10, 12]:
+        days_in_month = 31
+    elif month in [4, 6, 9, 11]:
+        days_in_month = 30
+    else:  # February
+        days_in_month = 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28
+        
+    start_date = f"{year}-{month:02d}-01"
+    end_date = f"{year}-{month:02d}-{days_in_month}"
+    
+    # Get images for this specific month in this specific year
+    monthly_collection = ee.ImageCollection(collection_id) \
+        .filterDate(start_date, end_date) \
+        .filterBounds(roi)
+    
+    # Apply quality and snow masking to each image
+    def apply_masks(image):
+        # Select the NTL band
+        ntl = image.select(band_name)
+        
+        # Quality mask: keep only good quality pixels (≤1)
+        quality_mask = image.select(quality_band).lte(1)
+        
+        # Snow mask: exclude snow-covered pixels (≠0)
+        snow_mask = image.select(snow_band).eq(0)
+        
+        # Combine all masks
+        combined_mask = quality_mask.And(snow_mask)
+        
+        # Apply water mask if provided
+        if water_mask is not None:
+            combined_mask = combined_mask.And(water_mask)
+        
+        # Apply combined mask to NTL data
+        return ntl.updateMask(combined_mask)
+    
+    # Apply masking to the collection
+    masked_collection = monthly_collection.map(apply_masks)
+    
+    # Get collection size
+    size = masked_collection.size().getInfo()
+    print(f"    Found {size} images for {get_month_name(month)} {year} (after quality/snow filtering)")
+    
+    if size > 0:
+        # Use median composite for this specific month
+        composite = masked_collection.median().clip(roi)
+        print(f"    ✓ Quality mask, snow mask, and water mask applied to {get_month_name(month)} {year}")
+        return composite
+    else:
+        print(f"    Found 0 valid images for {get_month_name(month)} {year} after masking")
+        return None
+
 def simple_getis_ord_gi_star(image, roi, scale=500):
     """Simplified Getis-Ord Gi* calculation with reliable statistics."""
     
@@ -458,20 +514,20 @@ def main():
                 config['ee']['ntl_band'],
                 config['ee']['quality_band'],  # Add quality band
                 config['ee']['snow_band'],     # Add snow band
-                water_mask
-            )
+                water_mask            )
             
             if baseline_composite is None:
                 print(f"  ✗ No baseline data for {month_name}, skipping...")
                 continue
-              # Get sample composite for this month
-            print(f"  Creating sample composite for {month_name} ({config['sample']['start_year']}-{config['sample']['end_year']})...")
             
-            sample_composite = get_monthly_ntl_composite(
+            # Get sample data for this month (use most recent year in sample period)
+            sample_year = config['sample']['end_year']  # Use the latest year
+            print(f"  Getting individual sample data for {month_name} {sample_year} (no compositing)...")
+            
+            sample_composite = get_individual_monthly_ntl(
                 config['ee']['ntl_collection_id'],
                 roi,
-                config['sample']['start_year'],
-                config['sample']['end_year'],
+                sample_year,
                 month,
                 config['ee']['ntl_band'],
                 config['ee']['quality_band'],  # Add quality band
@@ -538,20 +594,18 @@ def main():
                 config['export']['scale'],
                 config['export']['output_dir']
             )
-            
-            # Export sample
+              # Export sample
             export_image_locally(
                 sample_composite,
-                f"sample_{month_str}_{month_name}_{config['sample']['start_year']}-{config['sample']['end_year']}",
+                f"sample_{month_str}_{month_name}_{sample_year}",
                 roi,
                 config['export']['scale'],
                 config['export']['output_dir']
             )
-            
-            # Export change
+              # Export change
             export_image_locally(
                 ntl_change,
-                f"change_{month_str}_{month_name}_{config['baseline']['start_year']}-{config['baseline']['end_year']}_to_{config['sample']['start_year']}-{config['sample']['end_year']}",
+                f"change_{month_str}_{month_name}_{config['baseline']['start_year']}-{config['baseline']['end_year']}_to_{sample_year}",
                 roi,
                 config['export']['scale'],
                 config['export']['output_dir']
@@ -561,9 +615,8 @@ def main():
             if gi_star is not None:
                 # Detailed analysis
                 analyze_gi_star_distribution(gi_star, roi, config['export']['scale'], month_name)
-                
-                # Export as before
-                gi_filename = f"gi_star_{month:02d}_{month_name}_{config['sample']['start_year']}"
+                  # Export as before
+                gi_filename = f"gi_star_{month:02d}_{month_name}_{sample_year}"
                 export_image_locally(gi_star, gi_filename, roi, config['export']['scale'], config['export']['output_dir'])
                 print(f"    ✓ Exported: {gi_filename}")
             else:
@@ -580,10 +633,12 @@ def main():
     print(f"{'='*60}")
     print(f"Results saved to: {config['export']['output_dir']}")
     print("\nFiles generated for each month:")
-    print("  - baseline_MM_MonthName_YYYY-YYYY.tif")
-    print("  - sample_MM_MonthName_YYYY-YYYY.tif") 
-    print("  - change_MM_MonthName_YYYY-YYYY_to_YYYY-YYYY.tif")
+    print("  - baseline_MM_MonthName_YYYY-YYYY.tif (composite across baseline years)")
+    print("  - sample_MM_MonthName_YYYY.tif (individual year, no compositing)") 
+    print("  - change_MM_MonthName_YYYY-YYYY_to_YYYY.tif")
     print("  - gi_star_MM_MonthName_YYYY.tif")
+    print("\nNote: Baseline data uses multi-year composites for robustness")
+    print("      Sample data uses individual months from the latest year")
     print("\nUse these files for temporal analysis to identify:")
     print("  • Seasonal patterns in nighttime lights")
     print("  • Monthly variations in spatial clustering")
