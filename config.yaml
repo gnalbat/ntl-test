@@ -1,0 +1,23 @@
+ee:
+  project: quickstart-1588694539119
+  roi: [122.394119,10.373916,122.744309,10.908385]
+  ntl_collection_id: NASA/VIIRS/002/VNP46A2
+  ntl_band: Gap_Filled_DNB_BRDF_Corrected_NTL
+  quality_band: Mandatory_Quality_Flag
+  snow_band: Snow_Flag
+  use_water_mask: true   # Enable water masking 
+  use_quality_mask: true  # Enable quality masking
+
+baseline:
+  start_year: 2015
+  end_year:   2019
+
+sample:
+  start_year: 2023
+  end_year:   2024
+
+process_months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]  # All months
+
+export:
+  output_dir: "./data"
+  scale: 500
