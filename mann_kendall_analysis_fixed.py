@@ -598,8 +598,7 @@ def create_mann_kendall_spatial_maps(file_info):
                 p_values[i, j] = result.p
                 tau_values[i, j] = result.Tau
                 slope_values[i, j] = result.slope
-                
-                # Convert trend to numeric
+                  # Convert trend to numeric
                 if result.trend == 'increasing':
                     trend_direction[i, j] = 1
                 elif result.trend == 'decreasing':
@@ -607,7 +606,7 @@ def create_mann_kendall_spatial_maps(file_info):
                 else:
                     trend_direction[i, j] = 0
                 
-                if result.p < 0.10:  # Count marginally significant trends
+                if result.p < 0.05:  # Count statistically significant trends
                     significant_pixels += 1
                 
                 processed_pixels += 1
@@ -622,7 +621,7 @@ def create_mann_kendall_spatial_maps(file_info):
     
     print(f"Completed pixel-wise analysis:")
     print(f"  • Processed pixels: {processed_pixels:,}")
-    print(f"  • Significant trends (p<0.10): {significant_pixels} ({significant_pixels/processed_pixels*100:.2f}%)")
+    print(f"  • Significant trends (p<0.05): {significant_pixels} ({significant_pixels/processed_pixels*100:.2f}%)")
     
     # Create spatial maps
     fig, axes = plt.subplots(2, 2, figsize=(20, 16))
@@ -634,9 +633,8 @@ def create_mann_kendall_spatial_maps(file_info):
     # 1. Trend Direction Map
     ax1 = axes[0, 0]
     ax1.set_facecolor('#f0f0f0')
-    
-    # Create masked array for significant trends only
-    significant_trends = np.where(p_values < 0.10, trend_direction, np.nan)
+      # Create masked array for significant trends only
+    significant_trends = np.where(p_values < 0.05, trend_direction, np.nan)
     
     im1 = ax1.imshow(significant_trends, extent=extent, cmap='RdBu_r', 
                      vmin=-1, vmax=1, alpha=0.8)
@@ -646,7 +644,7 @@ def create_mann_kendall_spatial_maps(file_info):
     ax1.set_aspect('equal', adjustable='box')
     ax1.set_xlim(bounds.left, bounds.right)
     ax1.set_ylim(bounds.bottom, bounds.top)
-    ax1.set_title('Trend Direction (p < 0.10)\nRed=Increasing, Blue=Decreasing', fontweight='bold')
+    ax1.set_title('Trend Direction (p < 0.05)\nRed=Increasing, Blue=Decreasing', fontweight='bold')
     ax1.set_xlabel('Longitude')
     ax1.set_ylabel('Latitude')
     ax1.grid(True, alpha=0.3)
@@ -658,20 +656,18 @@ def create_mann_kendall_spatial_maps(file_info):
     
     # 2. P-value Map (significance)
     ax2 = axes[0, 1]
-    ax2.set_facecolor('#f0f0f0')
-    
-    # Show only significant p-values
-    p_display = np.where(p_values < 0.10, p_values, np.nan)
+    ax2.set_facecolor('#f0f0f0')    # Show only significant p-values
+    p_display = np.where(p_values < 0.05, p_values, np.nan)
     
     im2 = ax2.imshow(p_display, extent=extent, cmap='viridis_r', 
-                     vmin=0, vmax=0.10, alpha=0.8)
+                     vmin=0, vmax=0.05, alpha=0.8)
     ctx.add_basemap(ax2, crs="EPSG:4326", source=xyz.CartoDB.Positron, alpha=0.7)
     im2 = ax2.imshow(p_display, extent=extent, cmap='viridis_r', 
-                     vmin=0, vmax=0.10, alpha=0.8, zorder=1)
+                     vmin=0, vmax=0.05, alpha=0.8, zorder=1)
     ax2.set_aspect('equal', adjustable='box')
     ax2.set_xlim(bounds.left, bounds.right)
     ax2.set_ylim(bounds.bottom, bounds.top)
-    ax2.set_title('Trend Significance\n(p-values < 0.10)', fontweight='bold')
+    ax2.set_title('Trend Significance\n(p-values < 0.05)', fontweight='bold')
     ax2.set_xlabel('Longitude')
     ax2.set_ylabel('Latitude')
     ax2.grid(True, alpha=0.3)
@@ -682,9 +678,8 @@ def create_mann_kendall_spatial_maps(file_info):
     # 3. Trend Strength (Kendall's Tau)
     ax3 = axes[1, 0]
     ax3.set_facecolor('#f0f0f0')
-    
-    # Show tau values for significant trends
-    tau_display = np.where(p_values < 0.10, tau_values, np.nan)
+      # Show tau values for significant trends
+    tau_display = np.where(p_values < 0.05, tau_values, np.nan)
     
     im3 = ax3.imshow(tau_display, extent=extent, cmap='RdBu_r', 
                      vmin=-1, vmax=1, alpha=0.8)
@@ -705,9 +700,8 @@ def create_mann_kendall_spatial_maps(file_info):
     # 4. Slope Map
     ax4 = axes[1, 1]
     ax4.set_facecolor('#f0f0f0')
-    
-    # Show slope values for significant trends
-    slope_display = np.where(p_values < 0.10, slope_values, np.nan)
+      # Show slope values for significant trends
+    slope_display = np.where(p_values < 0.05, slope_values, np.nan)
     
     # Plot slope first, then add basemap (to keep colors correct)
     im4 = ax4.imshow(slope_display, extent=extent, cmap='RdBu_r', 
@@ -757,8 +751,7 @@ def create_spatial_trend_summary(p_values, trend_direction, tau_values, signific
     
     print(f"\n📊 MANN-KENDALL SPATIAL TREND SUMMARY")
     print("=" * 50)
-    
-    # Count trends by significance level
+      # Count trends by significance level
     highly_sig = np.sum(p_values < 0.01)
     moderately_sig = np.sum((p_values >= 0.01) & (p_values < 0.05))
     marginally_sig = np.sum((p_values >= 0.05) & (p_values < 0.10))
@@ -767,11 +760,11 @@ def create_spatial_trend_summary(p_values, trend_direction, tau_values, signific
     print(f"   • Highly significant (p < 0.01): {highly_sig} pixels")
     print(f"   • Moderately significant (0.01 ≤ p < 0.05): {moderately_sig} pixels")
     print(f"   • Marginally significant (0.05 ≤ p < 0.10): {marginally_sig} pixels")
-    print(f"   • Total significant: {significant_pixels} pixels")
+    print(f"   • Total significant (p < 0.05): {significant_pixels} pixels")
     print(f"   • Percentage of area: {significant_pixels/processed_pixels*100:.2f}%")
     
     # Count trend directions (for significant trends only)
-    sig_mask = p_values < 0.10
+    sig_mask = p_values < 0.05
     if np.any(sig_mask):
         increasing = np.sum((trend_direction == 1) & sig_mask)
         decreasing = np.sum((trend_direction == -1) & sig_mask)
@@ -938,29 +931,19 @@ def create_composite_raster(spatial_results, output_dir="./mann_kendall_results"
         trend_direction = spatial_results['trend_direction']
         p_values = spatial_results['p_values']
         bounds = spatial_results['bounds']
-        crs = spatial_results['crs']
-        
-        # Create composite values:
+        crs = spatial_results['crs']        # Create composite values:
         # -2: Significant decreasing (p < 0.05)
-        # -1: Marginal decreasing (0.05 ≤ p < 0.10)
-        #  0: No significant trend
-        #  1: Marginal increasing (0.05 ≤ p < 0.10)
+        #  0: No significant trend (p ≥ 0.05)
         #  2: Significant increasing (p < 0.05)
         
         composite = np.full_like(trend_direction, np.nan)
-        
-        # Significant trends (p < 0.05)
+          # Significant trends (p < 0.05)
         sig_mask = p_values < 0.05
         composite[(trend_direction == 1) & sig_mask] = 2   # Significant increasing
         composite[(trend_direction == -1) & sig_mask] = -2  # Significant decreasing
         
-        # Marginal trends (0.05 ≤ p < 0.10)
-        marginal_mask = (p_values >= 0.05) & (p_values < 0.10)
-        composite[(trend_direction == 1) & marginal_mask] = 1   # Marginal increasing
-        composite[(trend_direction == -1) & marginal_mask] = -1  # Marginal decreasing
-        
-        # No trend or not significant
-        no_trend_mask = (p_values >= 0.10) | (trend_direction == 0)
+        # All other trends are not significant
+        no_trend_mask = (p_values >= 0.05) | (trend_direction == 0)
         composite[no_trend_mask] = 0
         
         # Save composite raster
@@ -978,8 +961,7 @@ def create_composite_raster(spatial_results, output_dir="./mann_kendall_results"
             'nodata': np.nan,
             'width': width,
             'height': height,
-            'count': 1,
-            'crs': crs,
+            'count': 1,            'crs': crs,
             'transform': transform,
             'compress': 'lzw'
         }
@@ -988,7 +970,7 @@ def create_composite_raster(spatial_results, output_dir="./mann_kendall_results"
             dst.write(composite.astype(np.float32), 1)
         
         print(f"   ✅ Composite raster: {composite_file}")
-        print(f"   📊 Values: -2=Sig.Dec, -1=Marg.Dec, 0=NoTrend, 1=Marg.Inc, 2=Sig.Inc")
+        print(f"   📊 Values: -2=Sig.Dec, 0=NoTrend, 2=Sig.Inc (p<0.05)")
         
         return composite_file
         
@@ -1045,8 +1027,7 @@ def main():
             print(f"   • Significance mask raster (GeoTIFF)")
             print(f"   • Composite trend raster (GeoTIFF)")
             print(f"   • Metadata documentation (TXT)")
-    
-    # Generate interpretation report
+      # Generate interpretation report
     generate_interpretation_report(results, monthly_stats)
     
     print(f"\n✅ Complete Mann-Kendall analysis finished!")
@@ -1058,8 +1039,8 @@ def main():
     print(f"📊 Shows WHERE temporal trends are occurring geographically")
     print(f"💾 Raster outputs ready for GIS analysis")
     
-    if spatial_results and np.any(spatial_results['p_values'] < 0.10):
-        sig_count = np.sum(spatial_results['p_values'] < 0.10)
+    if spatial_results and np.any(spatial_results['p_values'] < 0.05):
+        sig_count = np.sum(spatial_results['p_values'] < 0.05)
         total_count = np.sum(~np.isnan(spatial_results['p_values']))
         print(f"🎯 Found {sig_count} pixels with significant temporal trends ({sig_count/total_count*100:.2f}% of area)")
     else:
